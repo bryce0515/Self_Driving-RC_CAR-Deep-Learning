@@ -5,7 +5,6 @@ Created on Wed Jan 24 11:12:23 2018
 @author: bsimmons
 """
 
-# -*- coding: utf-8 -*-
 """
 Created on Fri Jan 19 16:23:50 2018
 
@@ -13,6 +12,8 @@ Created on Fri Jan 19 16:23:50 2018
 """
 
 import threading
+from statistics import mode
+from collections import Counter
 import socketserver
 import cv2
 import numpy as np
@@ -33,8 +34,7 @@ import keras
 from keras.models import load_model
 import h5py
 from keras.models import Sequential
-#from keras.layers import LSTM, Dense
-from keras.layers import Dense
+from keras.layers import Dense, Dropout
 
 class AutoPilot(object):
     def __init__(self):
@@ -63,14 +63,25 @@ class AutoPilot(object):
 
     def NeuralNetwork(self):
         self.classifier = Sequential()
-        # Adding the input layer and the first hidden layer
-        self.classifier.add(Dense(units = 32, kernel_initializer = 'uniform', activation = 'relu', input_dim = 38400))
+        self.classifier.add(Dense(units = 32, kernel_initializer = 'uniform', activation = 'relu', input_dim = 54000))
+        self.classifier.add(Dropout(0.5))
+        
+        # Adding the first hidden layer
+        self.classifier.add(Dense(units = 32, kernel_initializer = 'uniform', activation = 'relu'))
+        self.classifier.add(Dropout(0.5))
+        
         # Adding the second hidden layer
         self.classifier.add(Dense(units = 32, kernel_initializer = 'uniform', activation = 'relu'))
+        self.classifier.add(Dropout(0.5))
+        
+        # Adding the third hidden layer
+        self.classifier.add(Dense(units = 32, kernel_initializer = 'uniform', activation = 'relu'))
+        self.classifier.add(Dropout(0.5))
+        
         # Adding the output  layer, 
-        self.classifier.add(Dense(units = 4, kernel_initializer = 'uniform', activation = 'sigmoid'))
-        self.classifier.load_weights('Saved_Weights_ANN.h5')
-        print(self.classifier)
+        self.classifier.add(Dense(units = 4, kernel_initializer = 'uniform', activation = 'softmax'))
+        self.classifier.load_weights('Saved_Weights.xml')
+#        print(self.classifier)
         self.handle()
 
     def predict(self, samples):
@@ -83,39 +94,60 @@ class AutoPilot(object):
     def steer(self, prediction):
         global byte
         byte = b''
-        prediction = prediction.argmax()
+        #prediction = prediction.argmax()
         if prediction == 2:
             byte = (bytes([1]))
-            self.command_client.send(byte)
             print("Forward")
+            self.command_client.send(byte)
         elif prediction == 0:
             byte = (bytes([7]))
-            self.command_client.send(byte)
             print("Foward Left")
+            self.command_client.send(byte)
         elif prediction == 1:
             byte = (bytes([6]))
-            self.command_client.send(byte)
             print("Foward Right")
+            self.command_client.send(byte)
         elif prediction == 3:
             byte = (bytes([2]))
             print("Reverse")
             self.command_client.send(byte)
         else:
             self.stop()
+            
         
 
 
     def stop(self):
+        global byte
         byte = (bytes([0]))
-        self.command_client.send(byte)
+        
+    def check_mode(self,pred):
+        a = [] 
+        b = []
+        res = {}
+        flag = False
+        res = Counter(pred)
+        #print(res)
+        for x in res:
+            b.append(x)
+        for y in range(len(b)):
+            a.append(res[b[y]])
+        for z in range(len(a)-1):
+            if a[0] == a[z+1]:
+                flag = True
+                break
+        return flag
 
     def handle(self):
         global prediction
         global byte
-
+        global count
+        flag = bool
+        switch = True
+        pred = []
+        count = 0
         # stream video frames one by one
         try:
-            len_stream_image = 0
             stream_image = 0
             while self.send_inst:
                 pygame.display.set_mode((100,100))
@@ -137,24 +169,37 @@ class AutoPilot(object):
                 from sklearn.preprocessing import StandardScaler
                 sc = StandardScaler()
                 stream_image = sc.fit_transform(stream_image)
-                # Check to see if full image has been loaded - this prevents errors due to images lost over network
-                # Feature Scaling
-                len_stream_image = stream_image.size
                 # select lower half of the image
-                roi = stream_image[120:340, :]
-                cv2.imshow('image', stream_image)
+                roi = stream_image[120:450, :]
+                cv2.imshow('image', roi)
                 #cv2.imshow('mlp_image', half_gray)
                 # reshape image
-                image_array = roi.reshape(1, 38400).astype(np.float32)
+                image_array = roi.reshape(1, 54000).astype(np.float32)
                 # neural network makes prediction
                 prediction = self.classifier.predict(image_array)
-                self.steer(prediction)
-                print(prediction)
-                self.command_client.send(byte)
-                sleep(0.1)
+                prediction = prediction.argmax()
+                count += 1
+                pred.append(prediction)
+                while count == 3:
+                    #print(pred)
+                    flag = self.check_mode(pred)
+                    #print(flag)
+                    if flag == True:
+                        count = 0
+                        flag = False
+                        pred = []
+                        continue
+                    else: #(switch == True and flag == False and count == 5):
+                        prediction = mode(pred)
+                        print(prediction)
+                        self.steer(prediction)
+                        pred = []
+                        count = 0
+                        
                 for event in pygame.event.get():
                     if event.type == pygame.KEYDOWN:
                         key_input = pygame.key.get_pressed()
+                        flag2 = False
                          # complex orders
                         if key_input[pygame.K_UP] and key_input[pygame.K_RIGHT]:
                             print("Forward Right")
@@ -171,7 +216,9 @@ class AutoPilot(object):
                         elif key_input[pygame.K_DOWN] and key_input[pygame.K_LEFT]:
                             print("Reverse Left")
                             byte = (bytes([9]))
-
+                        # simple orders
+                        elif key_input[pygame.K_a]:
+                            switch = True
                         # simple orders
                         elif key_input[pygame.K_UP]:
                             print("Forward")
