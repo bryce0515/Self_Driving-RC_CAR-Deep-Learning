@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+
 """
 Created on Mon Nov 27 12:37:06 2017
 
@@ -22,12 +22,13 @@ import sys
 from PIL import Image
 
 
-class CollectTrainingData(object):
+class CollectTrainingData_ANN(object):
     def __init__(self):
         # Set up command server and wait for a connect
         print ('Waiting for Command Client')
         self.command_server_soc = socket.socket()
         self.command_server_soc.bind(('192.168.43.117', 8000))
+#        self.command_server_soc.bind(('10.0.0.1', 8000)) 
         self.command_server_soc.listen(0) # wait for client connection
         self.command_client = self.command_server_soc.accept()[0] # wait for client to connect
 
@@ -37,6 +38,7 @@ class CollectTrainingData(object):
 
         # create socket
         self.video_server_soc = socket.socket()
+ #       self.command_server_soc.bind(('10.0.0.1', 8001)) 
         self.video_server_soc.bind(('192.168.43.117', 8001))
         self.video_server_soc.listen(0)
 
@@ -68,13 +70,13 @@ class CollectTrainingData(object):
         function is called. So if you call it before and after the function execution,
         you get number of clock-cycles used to execute a functio"""
         e1 = cv2.getTickCount()
-        image_array = np.zeros((1, 38400))
+        image_array = np.zeros((1, 54000))
         label_array = np.zeros((1, 4), 'float')
 
         # stream video frames one by one
         try:
             frame = 1
-            len_stream_image = 0
+            #len_stream_image = 0
             stream_image = 0
             while self.send_inst:
                 # Read the length of the image as a 32-bit unsigned int. If the
@@ -98,15 +100,15 @@ class CollectTrainingData(object):
 #                sc = StandardScaler()
 #                stream_image = sc.fit_transform(stream_image)
                 # Check to see if full image has been loaded - this prevents errors due to images lost over network
-                len_stream_image = stream_image.size
+                #len_stream_image = stream_image.size
                 # select lower half of the image
-                roi = stream_image[120:340, :]
+                roi = stream_image[120:450, :]
                 # save streamed images
                 cv2.imwrite('training_images_ANN/frame{:>05}.jpg'.format(frame), stream_image)
                 #cv2.imshow('roi_image', roi)
-                cv2.imshow('image', roi)
+                cv2.imshow('image', stream_image)
                 # reshape the roi image into one row array
-                temp_array = roi.reshape(1, 38400).astype(np.float32)
+                temp_array = roi.reshape(1, 54000).astype(np.float32)
                 frame += 1
                 total_frame += 1
                 pygame.display.set_mode((100,100))
@@ -124,6 +126,7 @@ class CollectTrainingData(object):
                             label_array = np.vstack((label_array, self.k[1]))
                             saved_frame += 1
                             byte = (bytes([6]))
+                            self.command_client.send(byte)
 
                         elif key_input[pygame.K_UP] and key_input[pygame.K_LEFT]:
                             print("Forward Left")
@@ -131,6 +134,7 @@ class CollectTrainingData(object):
                             label_array = np.vstack((label_array, self.k[0]))
                             saved_frame += 1
                             byte = (bytes([7]))
+                            self.command_client.send(byte)
 
                         elif key_input[pygame.K_DOWN] and key_input[pygame.K_RIGHT]:
                             print("Reverse Right")
@@ -138,6 +142,7 @@ class CollectTrainingData(object):
                             #label_array = np.vstack((label_array, self.k[4]))
                             #saved_frame += 1
                             byte = (bytes([8]))
+                            self.command_client.send(byte)
 
                         elif key_input[pygame.K_DOWN] and key_input[pygame.K_LEFT]:
                             print("Reverse Left")
@@ -145,6 +150,7 @@ class CollectTrainingData(object):
                             #label_array = np.vstack((label_array, self.k[5]))
                             #saved_frame += 1
                             byte = (bytes([9]))
+                            self.command_client.send(byte)
 
                         # simple orders
                         elif key_input[pygame.K_UP]:
@@ -153,6 +159,8 @@ class CollectTrainingData(object):
                             image_array = np.vstack((image_array, temp_array))
                             label_array = np.vstack((label_array, self.k[2]))
                             byte = (bytes([1]))
+                            self.command_client.send(byte)
+                            
 
                         elif key_input[pygame.K_DOWN]:
                             print("Reverse")
@@ -160,6 +168,7 @@ class CollectTrainingData(object):
                             image_array = np.vstack((image_array, temp_array))
                             label_array = np.vstack((label_array, self.k[3]))
                             byte = (bytes([2]))
+                            self.command_client.send(byte)
 
                         elif key_input[pygame.K_RIGHT]:
                             print("Right")
@@ -167,6 +176,7 @@ class CollectTrainingData(object):
                             label_array = np.vstack((label_array, self.k[1]))
                             saved_frame += 1
                             byte = (bytes([3]))
+                            self.command_client.send(byte)
 
                         elif key_input[pygame.K_LEFT]:
                             print("Left")
@@ -174,12 +184,13 @@ class CollectTrainingData(object):
                             label_array = np.vstack((label_array, self.k[0]))
                             saved_frame += 1
                             byte = (bytes([4]))
+                            self.command_client.send(byte)
 
                         elif key_input[pygame.K_RSHIFT]:
                             print ('pause')
                             byte = (bytes([0]))
                             self.command_client.send(byte)
-                            break
+                            #break
                         elif key_input[pygame.K_x] or key_input[pygame.K_q]:
                             print ('exit')
                             self.send_inst = False
@@ -187,18 +198,21 @@ class CollectTrainingData(object):
                             self.command_client.send(byte)
                             break
                         # send control command
-                        self.command_client.send(byte)
+                        #self.command_client.send(byte)
+                        #print(byte)
                         
                     elif event.type == pygame.KEYUP:
                         byte = (bytes([0]))
                         # print("KEY UP")
-                        # self.command_client.send(byte)
+                        #self.command_client.send(byte)
 
 
-
+#            train_images = []
             # save training images and labels
             train = image_array[1:, :]
             train_labels = label_array[1:, :]
+#            train_images = [train,train_labels]
+#            print(train_images)
 
             # save training data as a numpy file
             file_name = str(int(time.time()))
@@ -231,4 +245,4 @@ class CollectTrainingData(object):
             # sys.exit(0)
 
 if __name__ == '__main__':
-    CollectTrainingData()
+    CollectTrainingData_ANN()
